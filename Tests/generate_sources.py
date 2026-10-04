@@ -233,7 +233,12 @@ def main():
                         "    private static var helperAwaitsRegistration:",
                         "    private func rememberForResume(", "    private func stopIdleWorkIfPossible(",
                         "    @objc private func workspaceDidWake(",
-                        "    private func rememberTimedManualEnd(",
+                        "    @objc private func workspaceWillSleep(",
+                        "    private func applyConfiguration(_ configuration: FanControlConfiguration,",
+                        "    private func apply(_ response:",
+                        "    private func rememberTimedManual(",
+                        "    private static var storedTimedManual:",
+                        "    private func forgetTimedManual(",
                         "    @discardableResult private func discardEndedTimedManual(",
                         "    private func expireTimedManualIfNeeded("])
           + "}\n}\n")

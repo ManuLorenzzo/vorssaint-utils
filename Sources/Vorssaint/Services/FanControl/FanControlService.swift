@@ -19,8 +19,9 @@ final class FanControlService: ObservableObject {
     @Published private(set) var snapshot: FanControlSnapshot = .empty
     @Published private(set) var error: FanControlErrorCode?
     @Published private(set) var isWorking = false
-    /// When the running timed manual speed hands the fans back to the system.
-    @Published private(set) var timedManualEnd: Date?
+    /// The running timed manual speed: when it hands the fans back to the
+    /// system and the minutes picked for it.
+    @Published private(set) var timedManual: FanControlTimedManual?
 
     private let probeQueue = DispatchQueue(label: "com.vorssaint.fan-control.probe",
                                            qos: .utility)
@@ -45,8 +46,7 @@ final class FanControlService: ObservableObject {
     }
 
     private init() {
-        let storedEnd = UserDefaults.standard.double(forKey: DefaultsKey.fanControlManualEnd)
-        timedManualEnd = storedEnd > 0 ? Date(timeIntervalSinceReferenceDate: storedEnd) : nil
+        timedManual = Self.storedTimedManual
         refreshAccessState()
     }
 
@@ -72,7 +72,7 @@ final class FanControlService: ObservableObject {
             }
         } else {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.fanControlResumeConfiguration)
-            rememberTimedManualEnd(nil)
+            rememberTimedManual(nil)
             restoreThenUnregister()
         }
     }
@@ -135,17 +135,18 @@ final class FanControlService: ObservableObject {
     }
 
     func applyConfiguration(_ configuration: FanControlConfiguration) {
-        applyConfiguration(configuration, endsAt: nil)
+        applyConfiguration(configuration, timed: nil)
     }
 
     /// A manual speed that holds for `minutes`, or until the user changes it
     /// when `minutes` is `FanControlManualDuration.untilChanged`.
     func applyManual(level: Int, minutes: Int) {
         applyConfiguration(.manual(level: level),
-                           endsAt: FanControlManualDuration.end(minutes: minutes, from: Date()))
+                           timed: FanControlManualDuration.timed(minutes: minutes, from: Date()))
     }
 
-    private func applyConfiguration(_ configuration: FanControlConfiguration, endsAt: Date?) {
+    private func applyConfiguration(_ configuration: FanControlConfiguration,
+                                    timed: FanControlTimedManual?) {
         guard FanControlPolicy.validConfiguration(configuration) else {
             error = .controlFailed
             return
@@ -161,8 +162,10 @@ final class FanControlService: ObservableObject {
         }
         error = nil
         // Whatever this request ends in replaces the running speed and its
-        // end: its own control on success, the system otherwise.
-        rememberTimedManualEnd(nil)
+        // end: its own control on success, the system otherwise. A request
+        // that fails, gets no reply, is superseded by sleep or outlived by
+        // the app must not leave the timed speed kept without its end.
+        forgetTimedManual()
         let retrySnapshot = snapshot
         startObservingSystemState()
         let generation = beginRequest()
@@ -180,7 +183,7 @@ final class FanControlService: ObservableObject {
             }
             self.apply(response)
             if response.succeeded, response.snapshot.isCooling {
-                self.rememberTimedManualEnd(configuration.mode == .manual ? endsAt : nil)
+                self.rememberTimedManual(configuration.mode == .manual ? timed : nil)
                 self.rememberForResume(configuration)
                 self.startTimerIfNeeded()
             } else {
@@ -198,7 +201,7 @@ final class FanControlService: ObservableObject {
     /// The user's own return to System, the one stop a resume must honor.
     func returnToSystem() {
         UserDefaults.standard.removeObject(forKey: DefaultsKey.fanControlResumeConfiguration)
-        rememberTimedManualEnd(nil)
+        rememberTimedManual(nil)
         restoreAutomatic()
     }
 
@@ -376,7 +379,7 @@ final class FanControlService: ObservableObject {
         refreshAccessState()
         guard accessState == .enabled, !Self.helperAwaitsRegistration else { return false }
         // A timed speed comes back for the time it had left, never a new one.
-        applyConfiguration(configuration, endsAt: timedManualEnd)
+        applyConfiguration(configuration, timed: timedManual)
         return true
     }
 
@@ -396,30 +399,58 @@ final class FanControlService: ObservableObject {
 
     // MARK: - Timed manual speed
 
-    private func rememberTimedManualEnd(_ end: Date?) {
-        timedManualEnd = end
-        if let end {
-            UserDefaults.standard.set(end.timeIntervalSinceReferenceDate,
+    private func rememberTimedManual(_ timed: FanControlTimedManual?) {
+        timedManual = timed
+        if let timed {
+            UserDefaults.standard.set(timed.end.timeIntervalSinceReferenceDate,
                                       forKey: DefaultsKey.fanControlManualEnd)
+            UserDefaults.standard.set(timed.minutes, forKey: DefaultsKey.fanControlManualEndMinutes)
         } else {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.fanControlManualEnd)
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.fanControlManualEndMinutes)
         }
     }
 
-    /// Forgets a timed speed whose end has passed, with the kept control that
-    /// would bring it back, so no wake or launch can resume it. Reports
-    /// whether it did.
-    @discardableResult private func discardEndedTimedManual(now: Date) -> Bool {
-        guard let end = timedManualEnd,
-              FanControlManualDuration.hasEnded(end, now: now) else { return false }
-        rememberTimedManualEnd(nil)
+    /// The timed speed kept on this Mac. An end stored without its minutes
+    /// has nothing to bound it and counts as ended, so it is never resumed
+    /// as an untimed speed.
+    private static var storedTimedManual: FanControlTimedManual? {
+        let end = UserDefaults.standard.double(forKey: DefaultsKey.fanControlManualEnd)
+        guard end > 0 else { return nil }
+        return FanControlTimedManual(
+            end: Date(timeIntervalSinceReferenceDate: end),
+            minutes: UserDefaults.standard.integer(forKey: DefaultsKey.fanControlManualEndMinutes))
+    }
+
+    /// Forgets a timed speed together with the kept control that would bring
+    /// it back: a kept manual speed without its end would resume untimed.
+    private func forgetTimedManual() {
+        guard timedManual != nil else { return }
+        rememberTimedManual(nil)
         UserDefaults.standard.removeObject(forKey: DefaultsKey.fanControlResumeConfiguration)
+    }
+
+    /// Forgets a timed speed whose end has passed, so no wake or launch can
+    /// resume it, and puts the card back on System, where the end hands the
+    /// fans. Reports whether it did.
+    @discardableResult private func discardEndedTimedManual(now: Date) -> Bool {
+        guard let timed = timedManual,
+              FanControlManualDuration.hasEnded(timed, now: now) else { return false }
+        forgetTimedManual()
+        // A Curve or System picked since stays: only the Manual whose time
+        // ran out goes back.
+        if UserDefaults.standard.string(forKey: DefaultsKey.fanControlMode)
+            == FanControlMode.manual.rawValue {
+            UserDefaults.standard.set(FanControlMode.system.rawValue, forKey: DefaultsKey.fanControlMode)
+        }
         return true
     }
 
-    /// Hands the fans back once a running timed speed ends. The restore
-    /// supersedes any request in flight, the way sleep does: a pending reply
-    /// must not keep the speed past its end.
+    /// Hands the fans back once a running timed speed ends, through the same
+    /// plain restore as the user's own return to System: it leaves the helper
+    /// no stop reason, so the card reports no interruption for an end the
+    /// user picked. The restore supersedes any request in flight, the way
+    /// sleep does: a pending reply must not keep the speed past its end.
     private func expireTimedManualIfNeeded(now: Date) -> Bool {
         guard discardEndedTimedManual(now: now) else { return false }
         restoreAutomatic(supersedingCurrentRequest: true)

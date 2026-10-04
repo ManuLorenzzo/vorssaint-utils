@@ -50,6 +50,7 @@ struct FanControlFeatureStrings {
     let keepManualFor: String
     let untilChanged: String
     let returnsToSystemFormat: String
+    let timedSafetyCaption: String
 }
 
 extension FeatureStrings {
@@ -121,7 +122,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Resume after restart or sleep",
         keepManualFor: "Keep this speed for",
         untilChanged: "Until I change it",
-        returnsToSystemFormat: "Back to System in %@"
+        returnsToSystemFormat: "Back to System in %@",
+        timedSafetyCaption: "Control stays active until the time you picked ends or you return to System. It returns automatically if the app disconnects, the Mac sleeps, sensor readings fail or thermal pressure rises."
     )
 
     static let ptBR = FanControlFeatureStrings(
@@ -170,7 +172,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Retomar depois de reiniciar ou repousar",
         keepManualFor: "Manter esta velocidade por",
         untilChanged: "Até eu mudar",
-        returnsToSystemFormat: "Volta ao Sistema em %@"
+        returnsToSystemFormat: "Volta ao Sistema em %@",
+        timedSafetyCaption: "O controle fica ativo até acabar o tempo escolhido ou você voltar ao Sistema. Ele é devolvido automaticamente se o app desconectar, o Mac repousar, os sensores falharem ou a pressão térmica subir."
     )
 
     static let tr = FanControlFeatureStrings(
@@ -219,7 +222,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Yeniden başlatma veya uykudan sonra sürdür",
         keepManualFor: "Bu hızı koruma süresi",
         untilChanged: "Ben değiştirene kadar",
-        returnsToSystemFormat: "%@ sonra Sisteme dönecek"
+        returnsToSystemFormat: "%@ sonra Sisteme dönecek",
+        timedSafetyCaption: "Denetim, seçtiğiniz süre dolana veya Sistem’e dönene kadar etkin kalır. Uygulama bağlantısı kesilirse, Mac uyursa, sensör okumaları başarısız olursa veya termal basınç yükselirse otomatik olarak geri verilir."
     )
 
     static let ru = FanControlFeatureStrings(
@@ -268,7 +272,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Возобновлять после перезагрузки или сна",
         keepManualFor: "Держать эту скорость",
         untilChanged: "Пока я не изменю",
-        returnsToSystemFormat: "Возврат к системе через %@"
+        returnsToSystemFormat: "Возврат к системе через %@",
+        timedSafetyCaption: "Управление действует до конца выбранного времени или до возврата в режим «Система». Оно возвращается автоматически при отключении приложения, сне Mac, сбое датчиков или росте тепловой нагрузки."
     )
 
     static let es = FanControlFeatureStrings(
@@ -317,7 +322,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Reanudar tras reiniciar o salir del reposo",
         keepManualFor: "Mantener esta velocidad",
         untilChanged: "Hasta que la cambie",
-        returnsToSystemFormat: "Vuelve a Sistema en %@"
+        returnsToSystemFormat: "Vuelve a Sistema en %@",
+        timedSafetyCaption: "El control sigue activo hasta que acabe el tiempo elegido o vuelvas a Sistema. Se devuelve automáticamente si la app se desconecta, el Mac entra en reposo, fallan los sensores o aumenta la presión térmica."
     )
 
     static let sk = FanControlFeatureStrings(
@@ -366,7 +372,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Pokračovať po reštarte alebo spánku",
         keepManualFor: "Ponechať túto rýchlosť",
         untilChanged: "Kým ju nezmením",
-        returnsToSystemFormat: "Návrat na Systém o %@"
+        returnsToSystemFormat: "Návrat na Systém o %@",
+        timedSafetyCaption: "Ovládanie zostáva aktívne, kým neuplynie zvolený čas alebo sa nevrátite na Systém. Automaticky sa vráti, ak sa aplikácia odpojí, Mac uspí, zlyhajú snímače alebo stúpne tepelný tlak."
     )
 
     static let de = FanControlFeatureStrings(
@@ -415,7 +422,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Nach Neustart oder Ruhezustand fortsetzen",
         keepManualFor: "Diese Geschwindigkeit halten",
         untilChanged: "Bis ich sie ändere",
-        returnsToSystemFormat: "Zurück zu System in %@"
+        returnsToSystemFormat: "Zurück zu System in %@",
+        timedSafetyCaption: "Die Steuerung bleibt bis zum Ende der gewählten Zeit oder bis zur Rückkehr zu System aktiv. Sie wird bei getrennter App, Ruhezustand, Sensorausfall oder steigendem thermischem Druck automatisch zurückgegeben."
     )
 
     static let fr = FanControlFeatureStrings(
@@ -464,7 +472,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Reprendre après un redémarrage ou la veille",
         keepManualFor: "Garder cette vitesse pendant",
         untilChanged: "Jusqu’à ce que je la change",
-        returnsToSystemFormat: "Retour à Système dans %@"
+        returnsToSystemFormat: "Retour à Système dans %@",
+        timedSafetyCaption: "Le contrôle reste actif jusqu’à la fin de la durée choisie ou jusqu’au retour à Système. Il est rendu automatiquement si l’app se déconnecte, si le Mac veille, si les capteurs échouent ou si la pression thermique augmente."
     )
 
     static let it = FanControlFeatureStrings(
@@ -513,7 +522,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Riprendi dopo il riavvio o lo stop",
         keepManualFor: "Mantieni questa velocità per",
         untilChanged: "Finché non la cambio",
-        returnsToSystemFormat: "Ritorno a Sistema tra %@"
+        returnsToSystemFormat: "Ritorno a Sistema tra %@",
+        timedSafetyCaption: "Il controllo resta attivo finché non scade il tempo scelto o non torni a Sistema. Viene restituito automaticamente se l’app si disconnette, il Mac va in stop, i sensori falliscono o aumenta la pressione termica."
     )
 
     static let ja = FanControlFeatureStrings(
@@ -562,7 +572,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "再起動やスリープのあとに再開",
         keepManualFor: "この速度を保つ時間",
         untilChanged: "変更するまで",
-        returnsToSystemFormat: "あと%@でシステムに戻ります"
+        returnsToSystemFormat: "あと%@でシステムに戻ります",
+        timedSafetyCaption: "選んだ時間が終わるか、システムへ戻すまで制御は有効です。アプリの切断、Macのスリープ、センサー障害、熱圧力の上昇時には自動でシステムへ戻ります。"
     )
 
     static let ko = FanControlFeatureStrings(
@@ -611,7 +622,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "재시작 또는 잠자기 후 다시 적용",
         keepManualFor: "이 속도 유지 시간",
         untilChanged: "직접 바꿀 때까지",
-        returnsToSystemFormat: "%@ 후 시스템으로 돌아갑니다"
+        returnsToSystemFormat: "%@ 후 시스템으로 돌아갑니다",
+        timedSafetyCaption: "선택한 시간이 끝나거나 시스템으로 돌아갈 때까지 제어가 유지됩니다. 앱 연결 해제, Mac 잠자기, 센서 오류 또는 열 압력 상승 시 자동으로 시스템에 반환됩니다."
     )
 
     static let zhHans = FanControlFeatureStrings(
@@ -660,7 +672,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "重新启动或睡眠后恢复",
         keepManualFor: "保持此速度",
         untilChanged: "直到我更改",
-        returnsToSystemFormat: "%@后恢复系统控制"
+        returnsToSystemFormat: "%@后恢复系统控制",
+        timedSafetyCaption: "控制会保持到所选时间结束或你恢复系统模式。App 断开、Mac睡眠、传感器失效或热压力升高时会自动交还系统。"
     )
 
     static let zhTW = FanControlFeatureStrings(
@@ -709,7 +722,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "重新開機或睡眠後恢復",
         keepManualFor: "維持此速度",
         untilChanged: "直到我變更",
-        returnsToSystemFormat: "%@後恢復系統控制"
+        returnsToSystemFormat: "%@後恢復系統控制",
+        timedSafetyCaption: "控制會持續到所選時間結束或你恢復系統模式。App中斷、Mac睡眠、感測器失效或熱壓力升高時會自動交還系統。"
     )
 
     static let zhHK = FanControlFeatureStrings(
@@ -758,7 +772,8 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "重新啟動或睡眠後恢復",
         keepManualFor: "維持此速度",
         untilChanged: "直到我更改",
-        returnsToSystemFormat: "%@後恢復系統控制"
+        returnsToSystemFormat: "%@後恢復系統控制",
+        timedSafetyCaption: "控制會持續到所選時間結束或你恢復系統模式。App中斷、Mac睡眠、感測器失效或熱壓力升高時會自動交還系統。"
     )
     static let uk = FanControlFeatureStrings(
         title: "Керування вентиляторами",
@@ -806,6 +821,7 @@ extension FanControlFeatureStrings {
         resumeAfterRestart: "Відновлювати після перезавантаження або сну",
         keepManualFor: "Тримати цю швидкість",
         untilChanged: "Доки я не зміню",
-        returnsToSystemFormat: "Повернення до системи через %@"
+        returnsToSystemFormat: "Повернення до системи через %@",
+        timedSafetyCaption: "Керування залишається активним до кінця вибраного часу або доки ви не повернетесь до «Система». Воно повертається автоматично, якщо програма відключається, Mac засинає, датчики дають збій або зростає термічний тиск."
     )
 }

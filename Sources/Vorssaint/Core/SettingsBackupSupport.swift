@@ -173,6 +173,7 @@ enum SettingsBackupSupport {
         DefaultsKey.fanControlResumeConfiguration,
         // A timed speed running on one Mac has nothing to end on another.
         DefaultsKey.fanControlManualEnd,
+        DefaultsKey.fanControlManualEndMinutes,
         DefaultsKey.switcherNativeHotkeysSuppressed,
         DefaultsKey.systemShortcutsSuppressed,
         // DDC capability belongs to one physical monitor on one Mac port.

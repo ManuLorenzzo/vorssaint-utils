@@ -37,7 +37,7 @@ struct FanControlSection: View {
                                   curves: curvesBinding,
                                   resume: $resume,
                                   manualMinutes: $manualMinutes,
-                                  timedManualEnd: service.timedManualEnd,
+                                  timedManual: service.timedManual,
                                   durationTitle: durationTitle,
                                   temperatureUnit: displayTemperatureUnit,
                                   authorize: service.authorize,
@@ -97,7 +97,7 @@ struct FanControlCardContent: View {
     @Binding var curves: [FanControlCurve]
     @Binding var resume: Bool
     @Binding var manualMinutes: Int
-    let timedManualEnd: Date?
+    let timedManual: FanControlTimedManual?
     let durationTitle: (Int, Bool) -> String
     let temperatureUnit: TemperatureUnit
     let authorize: () -> Void
@@ -148,7 +148,7 @@ struct FanControlCardContent: View {
 
             action
 
-            if let end = FanControlManualDuration.runningEnd(timedManualEnd, snapshot: snapshot) {
+            if let end = runningEnd {
                 timedCountdown(until: end)
             }
 
@@ -160,7 +160,7 @@ struct FanControlCardContent: View {
             }
 
             if controlsCanAppear {
-                Text(strings.safetyCaption)
+                Text(controlEndsOnItsOwn ? strings.timedSafetyCaption : strings.safetyCaption)
                     .font(.system(size: 9.5))
                     .foregroundStyle(Color.secondary.opacity(0.84))
                     .fixedSize(horizontal: false, vertical: true)
@@ -198,44 +198,101 @@ struct FanControlCardContent: View {
     }
 
     /// The Keep awake chips, as a choice for the Apply button rather than a
-    /// start: the speed above still has to be picked first.
+    /// start: the speed above still has to be picked first. The menu bar
+    /// panel shares its width evenly among the chips, so, like the Keep awake
+    /// row, this folds into two rows of three when one row would truncate.
     private var manualDurationChips: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(strings.keepManualFor)
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
-            HStack(spacing: 4) {
-                ForEach(FanControlManualDuration.choices, id: \.self) { minutes in
-                    let selected = selectedManualMinutes == minutes
-                    Button(durationTitle(minutes, false)) { manualMinutes = minutes }
-                        .buttonStyle(KeepAwakeChipStyle(isSelected: selected))
-                        .disabled(isWorking)
-                        .help(durationTitle(minutes, true))
-                        .accessibilityLabel(durationTitle(minutes, true))
-                        .accessibilityAddTraits(selected ? .isSelected : [])
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    ForEach(FanControlManualDuration.choices, id: \.self, content: durationChip)
+                }
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        ForEach(FanControlManualDuration.choices.prefix(3), id: \.self,
+                                content: durationChip)
+                    }
+                    HStack(spacing: 4) {
+                        ForEach(FanControlManualDuration.choices.dropFirst(3), id: \.self,
+                                content: durationChip)
+                    }
                 }
             }
         }
     }
 
+    private func durationChip(_ minutes: Int) -> some View {
+        let selected = selectedManualMinutes == minutes
+        return Button {
+            manualMinutes = minutes
+        } label: {
+            // Every chip reserves the widest label, the way the Keep awake
+            // chips reserve a full countdown: an even split then keeps one
+            // row only when every label fits in its share.
+            ZStack {
+                ForEach(FanControlManualDuration.choices, id: \.self) { other in
+                    Text(durationTitle(other, false)).hidden()
+                }
+                Text(durationTitle(minutes, false))
+            }
+        }
+        .buttonStyle(KeepAwakeChipStyle(isSelected: selected))
+        .disabled(isWorking)
+        .help(durationTitle(minutes, true))
+        .accessibilityLabel(durationTitle(minutes, true))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// The countdown keeps one line beside the button when both fit, and
+    /// the button moves under it when they do not, as in a narrow panel
+    /// with a long button label.
     private func timedCountdown(until end: Date) -> some View {
-        HStack(spacing: 6) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                countdownLabel(until: end)
+                    .fixedSize()
+                Spacer(minLength: 4)
+                // With System picked, the Apply row already offers this button.
+                if mode != .system {
+                    endEarlyButton
+                        .fixedSize()
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                countdownLabel(until: end)
+                    .fixedSize(horizontal: false, vertical: true)
+                if mode != .system {
+                    endEarlyButton
+                }
+            }
+        }
+    }
+
+    private func countdownLabel(until end: Date) -> some View {
+        // Reserves the longest countdown a timed speed shows, so the layout
+        // chosen above holds while the time counts down. The longest choice
+        // is an hour, already under "60:00" by the time the helper confirms
+        // it, so the countdown stays in minutes and seconds.
+        ZStack(alignment: .leading) {
+            Label(String(format: strings.returnsToSystemFormat, "00:00"), systemImage: "timer")
+                .hidden()
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 Label(String(format: strings.returnsToSystemFormat,
                              KeepAwakeCard.countdownText(until: end)),
                       systemImage: "timer")
-                    .font(.system(size: 10.5).monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
-            // With System picked, the Apply row already offers this button.
-            if mode != .system {
-                Button(strings.returnToSystem, action: stopCooling)
-                    .buttonStyle(KeepAwakeChipStyle())
-                    .fixedSize()
-                    .disabled(isWorking)
             }
         }
+        .font(.system(size: 10.5).monospacedDigit())
+        .foregroundStyle(.secondary)
+    }
+
+    private var endEarlyButton: some View {
+        Button(strings.returnToSystem, action: stopCooling)
+            .buttonStyle(KeepAwakeChipStyle())
+            .disabled(isWorking)
     }
 
     private var statusHeader: some View {
@@ -425,6 +482,16 @@ struct FanControlCardContent: View {
 
     private var selectedManualMinutes: Int {
         FanControlManualDuration.validated(manualMinutes)
+    }
+
+    private var runningEnd: Date? {
+        FanControlManualDuration.runningEnd(timedManual, snapshot: snapshot)
+    }
+
+    private var controlEndsOnItsOwn: Bool {
+        FanControlManualDuration.controlEndsOnItsOwn(runningEnd: runningEnd,
+                                                     isCooling: snapshot.isCooling,
+                                                     mode: mode, minutes: selectedManualMinutes)
     }
 
     private var coolingLevelBinding: Binding<Double> {
