@@ -352,8 +352,11 @@ final class FanControlService: ObservableObject {
             return
         }
         // Only the control running now is kept, never an older one left
-        // behind, for example by a restored backup.
-        if snapshot.isCooling, let configuration = snapshot.configuration {
+        // behind, for example by a restored backup. While a request stops or
+        // replaces it, the snapshot still shows the old control, which may
+        // already have lost its end; that request decides what runs, and an
+        // apply it confirms keeps its own control then.
+        if !isWorking, snapshot.isCooling, let configuration = snapshot.configuration {
             rememberForResume(configuration)
         } else {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.fanControlResumeConfiguration)

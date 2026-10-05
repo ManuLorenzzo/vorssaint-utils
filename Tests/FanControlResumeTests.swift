@@ -29,10 +29,11 @@ enum FanControlResumeContract {
         var invalidated = false
         func invalidate() { invalidated = true }
     }
-    /// The helper end of a request: it records what it was asked to apply,
+    /// The helper end of a request: it records what it was asked to do,
     /// and its reply arrives only when a test delivers one.
     protocol FanControlXPCProtocol {
         func applyConfiguration(_ configuration: Data, withReply reply: @escaping (Data) -> Void)
+        func restoreAutomatic(withReply reply: @escaping (Data) -> Void)
     }
     enum FanControlIPC {
         static func encode(_ configuration: FanControlConfiguration) -> Data? {
@@ -41,11 +42,17 @@ enum FanControlResumeContract {
     }
     final class Helper: FanControlXPCProtocol {
         var applied: [FanControlConfiguration] = []
+        var requests: [String] = []
         func applyConfiguration(_ configuration: Data, withReply reply: @escaping (Data) -> Void) {
+            requests.append("apply")
             if let decoded = try? JSONDecoder().decode(FanControlConfiguration.self, from: configuration) {
                 applied.append(decoded)
             }
         }
+        func restoreAutomatic(withReply reply: @escaping (Data) -> Void) { requests.append("restore") }
+    }
+    struct AppService {
+        func unregister() throws {}
     }
     class Fixture {
         enum AccessState { case notRegistered, requiresApproval, enabled, unavailable }
@@ -67,7 +74,10 @@ enum FanControlResumeContract {
             get { helper.applied }
             set { helper.applied = newValue }
         }
+        /// What the helper was asked to do, in order: "apply" or "restore".
+        var requests: [String] { helper.requests }
         var events: [String] = []
+        static var appService: AppService { AppService() }
         func refreshAccessState() {}
         func authorize() { events.append("authorize") }
         func startObservingSystemState() { observing = true }
@@ -82,19 +92,6 @@ enum FanControlResumeContract {
             return requestGeneration
         }
         func finishRequest(_ generation: Int) -> Bool { generation == requestGeneration }
-        func restoreAutomatic() { events.append("restore") }
-        /// Like the service, any restore that runs starts a request of its
-        /// own, so a reply still pending is dropped when it arrives.
-        func restoreAutomatic(supersedingCurrentRequest: Bool,
-                              preserving failure: FanControlErrorCode? = nil,
-                              retrySnapshot: FanControlSnapshot? = nil) {
-            requestGeneration += 1
-            if let failure {
-                events.append("restore after \(failure.rawValue)")
-            } else {
-                events.append(supersedingCurrentRequest ? "restore superseding" : "restore")
-            }
-        }
         func restoreThenUnregister() { events.append("unregister") }
         func refresh() { events.append("refresh") }
         func stopObservingSystemState() { observing = false }
@@ -118,6 +115,7 @@ enum FanControlResumeContract {
             requestGeneration = 0
             pendingReplies = []
             applied = []
+            helper.requests = []
             events = []
         }
     }
@@ -144,16 +142,16 @@ enum FanControlResumeContract {
 
         reset(resume: false, recovery: true)
         Service.recoverIfNeeded()
-        suite.expect(service.applied.isEmpty && service.events == ["restore"],
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"],
                      "without resume, a launch after an interrupted session only returns the fans to the system")
         reset(recovery: true)
         Service.recoverIfNeeded()
-        suite.expect(service.applied == [manual] && service.events.isEmpty,
+        suite.expect(service.applied == [manual] && service.requests == ["apply"],
                      "with resume on, a launch re-applies the kept control instead of restoring first")
         reset()
         service.accessState = .requiresApproval
         Service.recoverIfNeeded()
-        suite.expect(service.applied.isEmpty && service.events.isEmpty,
+        suite.expect(service.requests.isEmpty && service.events.isEmpty,
                      "a resume never asks for helper approval on its own")
         reset()
         Environment.available = false
@@ -209,7 +207,7 @@ enum FanControlResumeContract {
 
         reset()
         service.returnToSystem()
-        suite.expect(storedResume == nil && service.events == ["restore"],
+        suite.expect(storedResume == nil && service.requests == ["restore"],
                      "returning to System forgets the kept control and restores the fans")
 
         reset()
@@ -222,16 +220,16 @@ enum FanControlResumeContract {
 
         reset()
         service.workspaceDidWake()
-        suite.expect(service.applied == [manual] && service.events.isEmpty,
+        suite.expect(service.applied == [manual] && service.requests == ["apply"],
                      "waking re-applies the kept control")
         reset(resume: false, recovery: true)
         service.workspaceDidWake()
-        suite.expect(service.applied.isEmpty && service.events == ["restore superseding"],
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"],
                      "without resume, waking still returns an interrupted session to the system")
         reset(resume: false)
         service.panelIsVisible = true
         service.workspaceDidWake()
-        suite.expect(service.applied.isEmpty && service.events == ["refresh"],
+        suite.expect(service.requests.isEmpty && service.events == ["refresh"],
                      "without resume, waking only refreshes a visible panel")
 
         reset()
@@ -274,7 +272,11 @@ enum FanControlResumeContract {
         var storedEnd: Double { defaults.double(forKey: DefaultsKey.fanControlManualEnd) }
         var storedMinutes: Int { defaults.integer(forKey: DefaultsKey.fanControlManualEndMinutes) }
         var storedMode: String? { defaults.string(forKey: DefaultsKey.fanControlMode) }
-        var cooling = FanControlSnapshot.empty
+        let fan = FanControlFanReading(index: 0, actualRPM: 2_000, minimumRPM: 1_200,
+                                       maximumRPM: 6_000, targetRPM: 2_000, isManuallyControlled: false)
+        var onSystem = FanControlSnapshot.empty
+        onSystem.fans = [fan]
+        var cooling = onSystem
         cooling.isCooling = true
         cooling.configuration = manual
 
@@ -346,24 +348,27 @@ enum FanControlResumeContract {
         reset(timed: timed)
         service.snapshot = cooling
         suite.expect(!service.expireTimedManualIfNeeded(now: now.addingTimeInterval(599))
-                && service.events.isEmpty && service.timedManual == timed
+                && service.requests.isEmpty && service.timedManual == timed
                 && storedEnd == end.timeIntervalSinceReferenceDate && storedMinutes == 10,
                "a timed speed keeps running before its end, stored with its minutes")
         suite.expect(service.expireTimedManualIfNeeded(now: end)
-                && service.events == ["restore superseding"] && service.error == nil
+                && service.requests == ["restore"]
                 && service.timedManual == nil && storedEnd == 0 && storedMinutes == 0
                 && storedResume == nil,
-               "at its end a timed speed returns the fans through a plain restore, with no failure to report")
+               "at its end a timed speed asks the helper to restore the fans and forgets the kept control")
+        service.reply(.success(onSystem))
+        suite.expect(service.error == nil && !service.isWorking && !service.snapshot.isCooling,
+                     "an end the user picked reports no failure once the fans are back on System")
         suite.expect(storedMode == FanControlMode.system.rawValue,
                      "the card shows System once a timed speed hands the fans back")
         suite.expect(!service.expireTimedManualIfNeeded(now: end.addingTimeInterval(1))
-                && service.events == ["restore superseding"],
+                && service.requests == ["restore"],
                "an ended speed is handed back once")
 
         reset(timed: FanControlManualDuration.timed(minutes: 5, from: now))
         service.snapshot = cooling
         suite.expect(service.expireTimedManualIfNeeded(now: now.addingTimeInterval(-50 * 60 + 10))
-                && service.events == ["restore superseding"] && storedResume == nil,
+                && service.requests == ["restore"] && storedResume == nil,
                "a 5 minute speed ends at once when the clock moves back 50 minutes right after it starts")
 
         reset(timed: timed, mode: .curve)
@@ -375,19 +380,19 @@ enum FanControlResumeContract {
         reset(timed: nil)
         service.snapshot = cooling
         suite.expect(!service.expireTimedManualIfNeeded(now: now.addingTimeInterval(86_400 * 30))
-                && service.events.isEmpty && storedResume != nil
+                && service.requests.isEmpty && storedResume != nil
                 && storedMode == FanControlMode.manual.rawValue,
                "a manual speed kept until I change it never ends on its own")
 
         reset(timed: timed)
         service.returnToSystem()
         suite.expect(service.timedManual == nil && storedEnd == 0 && storedMinutes == 0
-                && storedResume == nil && service.events == ["restore"],
+                && storedResume == nil && service.requests == ["restore"],
                "returning to System early cancels the timed speed")
 
         reset(timed: FanControlTimedManual(end: Date().addingTimeInterval(-60), minutes: 5), recovery: true)
         service.workspaceDidWake()
-        suite.expect(service.applied.isEmpty && service.events == ["restore superseding"]
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"]
                 && service.timedManual == nil && storedResume == nil
                 && storedMode == FanControlMode.system.rawValue,
                "an end passed during sleep hands the fans back on wake instead of resuming them")
@@ -402,7 +407,7 @@ enum FanControlResumeContract {
 
         reset(timed: FanControlTimedManual(end: Date().addingTimeInterval(-60), minutes: 5), recovery: true)
         Service.recoverIfNeeded()
-        suite.expect(service.applied.isEmpty && service.events == ["restore"]
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"]
                 && storedResume == nil,
                "a launch after the end restores the system instead of resuming the timed speed")
         reset(timed: remaining)
@@ -421,7 +426,7 @@ enum FanControlResumeContract {
         defaults.values[DefaultsKey.fanControlManualEnd] = Date().addingTimeInterval(300).timeIntervalSinceReferenceDate
         relaunch()
         Service.recoverIfNeeded()
-        suite.expect(service.applied.isEmpty && service.events == ["restore"] && storedResume == nil,
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"] && storedResume == nil,
                      "a stored end without its minutes is never resumed as an untimed speed")
 
         // The kept control and its end leave together while a resume waits
@@ -434,7 +439,7 @@ enum FanControlResumeContract {
         service.reply(.failure(.controlFailed))
         relaunch()
         Service.recoverIfNeeded()
-        suite.expect(service.applied.isEmpty && service.events == ["restore"],
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"],
                      "a timed resume the helper rejects never comes back untimed on the next launch")
 
         reset(timed: remaining)
@@ -442,7 +447,7 @@ enum FanControlResumeContract {
         service.reply(nil)
         relaunch()
         service.workspaceDidWake()
-        suite.expect(service.applied.isEmpty && service.events == ["restore superseding"],
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"],
                      "a timed resume that gets no reply never comes back untimed on the next wake")
 
         reset(timed: remaining)
@@ -453,14 +458,14 @@ enum FanControlResumeContract {
                      "a reply that arrives after sleep superseded the timed resume keeps nothing")
         service.workspaceDidWake()
         suite.expect(service.applied == [manual]
-                && service.events == ["restore superseding", "restore superseding"],
+                && service.requests == ["apply", "restore", "restore"],
                "a timed resume superseded by sleep never comes back untimed on the next wake")
 
         reset(timed: remaining)
         Service.recoverIfNeeded()
         relaunch()
         Service.recoverIfNeeded()
-        suite.expect(service.applied.isEmpty && service.events == ["restore"],
+        suite.expect(service.applied.isEmpty && service.requests == ["restore"],
                      "a timed resume the app quit before confirming never comes back untimed")
 
         reset(timed: nil)
@@ -471,6 +476,59 @@ enum FanControlResumeContract {
         Service.recoverIfNeeded()
         suite.expect(service.applied == [manual] && service.pendingReplies.count == 1,
                      "a timed speed the helper rejects leaves the untimed control kept before it to resume")
+
+        // Turning resume on keeps only a confirmed control that nothing is
+        // stopping or replacing: a request in flight decides what runs.
+        func runningTimedWithoutResume() {
+            reset(resume: false, timed: remaining)
+            defaults.values[DefaultsKey.fanControlResumeConfiguration] = nil
+            service.snapshot = cooling
+        }
+        func turnResumeOn() {
+            defaults.values[DefaultsKey.fanControlResume] = true
+            service.resumePreferenceDidChange()
+        }
+        runningTimedWithoutResume()
+        turnResumeOn()
+        suite.expect(FanControlConfiguration.decodeResume(storedResume ?? "") == manual
+                && storedEnd == remaining.end.timeIntervalSinceReferenceDate && storedMinutes == 5,
+               "turning resume on during a confirmed timed speed keeps it with its end")
+
+        runningTimedWithoutResume()
+        service.returnToSystem()
+        turnResumeOn()
+        suite.expect(storedResume == nil,
+                     "turning resume on while a timed speed returns to System keeps nothing")
+        service.reply(.success(onSystem))
+        relaunch()
+        Service.recoverIfNeeded()
+        service.workspaceDidWake()
+        suite.expect(service.requests.isEmpty && storedResume == nil,
+                     "a timed speed stopped before resume was turned on never comes back once the restore succeeds")
+
+        runningTimedWithoutResume()
+        service.applyConfiguration(.manual(level: 60), timed: nil)
+        turnResumeOn()
+        suite.expect(storedResume == nil,
+                     "turning resume on while a new speed replaces a timed one keeps neither yet")
+        service.reply(.failure(.controlFailed))
+        service.reply(.success(onSystem))
+        relaunch()
+        Service.recoverIfNeeded()
+        service.workspaceDidWake()
+        suite.expect(service.applied.isEmpty && storedResume == nil,
+                     "a timed speed whose replacement fails after resume was turned on never comes back untimed")
+
+        runningTimedWithoutResume()
+        let replacement = FanControlManualDuration.timed(minutes: 10, from: Date())
+        service.applyConfiguration(.manual(level: 60), timed: replacement)
+        turnResumeOn()
+        var replaced = cooling
+        replaced.configuration = .manual(level: 60)
+        service.reply(.success(replaced))
+        suite.expect(FanControlConfiguration.decodeResume(storedResume ?? "") == .manual(level: 60)
+                && service.timedManual == replacement && storedMinutes == 10,
+               "a replacement confirmed after resume was turned on is kept with its own end")
 
         reset(timed: remaining)
         Environment.available = false

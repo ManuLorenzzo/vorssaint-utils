@@ -229,6 +229,8 @@ def main():
                     .replace("private func", "func", 1) for prefix in [
                         "    static func recoverIfNeeded(", "    func syncWithPreferences(",
                         "    func returnToSystem(", "    func resumePreferenceDidChange(",
+                        "    func restoreAutomatic() {",
+                        "    private func restoreAutomatic(supersedingCurrentRequest:",
                         "    private static var resumableConfiguration:", "    private func resume(",
                         "    private static var helperAwaitsRegistration:",
                         "    private func rememberForResume(", "    private func stopIdleWorkIfPossible(",
