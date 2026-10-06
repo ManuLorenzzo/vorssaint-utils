@@ -58,7 +58,12 @@ final class FanControlService: ObservableObject {
 
     static func recoverIfNeeded() {
         // A timed speed that ended while the app was closed resumes nothing.
-        shared.discardEndedTimedManual(now: Date())
+        // Without a stored end a launch reaches the service only for a kept
+        // control or a recovery, so a Mac that never ran a timed speed, or
+        // has the feature off, does not load it here.
+        if storedTimedManual != nil, AppFeature.fanControl.isAvailable {
+            shared.discardEndedTimedManual(now: Date())
+        }
         // Re-applying supersedes the recovery: a start that fails restores too.
         if let configuration = resumableConfiguration, shared.resume(configuration) { return }
         guard UserDefaults.standard.bool(forKey: DefaultsKey.fanControlRecoveryNeeded) else { return }

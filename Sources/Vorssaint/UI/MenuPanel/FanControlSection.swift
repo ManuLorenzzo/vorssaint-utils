@@ -38,7 +38,8 @@ struct FanControlSection: View {
                                   resume: $resume,
                                   manualMinutes: $manualMinutes,
                                   timedManual: service.timedManual,
-                                  durationTitle: durationTitle,
+                                  durationLabels: FanControlDurationLabels.labels(
+                                      for: l10n.language, l10n.s, untilChanged: strings.untilChanged),
                                   temperatureUnit: displayTemperatureUnit,
                                   authorize: service.authorize,
                                   applyConfiguration: service.applyConfiguration,
@@ -75,12 +76,36 @@ struct FanControlSection: View {
     private var displayTemperatureUnit: TemperatureUnit {
         TemperatureUnit(rawValue: temperatureUnit) ?? .celsius
     }
+}
 
-    /// The Keep awake chip labels ("5m", "∞"), spelled out for VoiceOver.
-    private func durationTitle(_ minutes: Int, spelledOut: Bool) -> String {
-        guard minutes > 0 else { return spelledOut ? strings.untilChanged : "∞" }
-        return DurationPicker.shortTitle(for: minutes, l10n.s, l10n.language,
-                                         style: spelledOut ? .full : .abbreviated)
+/// The duration chips' labels for one language: the Keep awake labels ("5m",
+/// "∞") and the same durations spelled out for VoiceOver. Each label builds a
+/// formatter, and the card refreshes on every heartbeat reply, so they are
+/// formatted once per language instead of on every refresh.
+struct FanControlDurationLabels {
+    let language: AppLanguage
+    let short: [Int: String]
+    let spoken: [Int: String]
+
+    private static var cached: FanControlDurationLabels?
+
+    static func labels(for language: AppLanguage, _ s: Strings,
+                       untilChanged: String) -> FanControlDurationLabels {
+        if let cached, cached.language == language { return cached }
+        var short: [Int: String] = [:]
+        var spoken: [Int: String] = [:]
+        for minutes in FanControlManualDuration.choices {
+            guard minutes > 0 else {
+                short[minutes] = "∞"
+                spoken[minutes] = untilChanged
+                continue
+            }
+            short[minutes] = DurationPicker.shortTitle(for: minutes, s, language)
+            spoken[minutes] = DurationPicker.shortTitle(for: minutes, s, language, style: .full)
+        }
+        let labels = FanControlDurationLabels(language: language, short: short, spoken: spoken)
+        cached = labels
+        return labels
     }
 }
 
@@ -98,7 +123,7 @@ struct FanControlCardContent: View {
     @Binding var resume: Bool
     @Binding var manualMinutes: Int
     let timedManual: FanControlTimedManual?
-    let durationTitle: (Int, Bool) -> String
+    let durationLabels: FanControlDurationLabels
     let temperatureUnit: TemperatureUnit
     let authorize: () -> Void
     let applyConfiguration: (FanControlConfiguration) -> Void
@@ -234,15 +259,15 @@ struct FanControlCardContent: View {
             // row only when every label fits in its share.
             ZStack {
                 ForEach(FanControlManualDuration.choices, id: \.self) { other in
-                    Text(durationTitle(other, false)).hidden()
+                    Text(durationLabels.short[other] ?? "").hidden()
                 }
-                Text(durationTitle(minutes, false))
+                Text(durationLabels.short[minutes] ?? "")
             }
         }
         .buttonStyle(KeepAwakeChipStyle(isSelected: selected))
         .disabled(isWorking)
-        .help(durationTitle(minutes, true))
-        .accessibilityLabel(durationTitle(minutes, true))
+        .help(durationLabels.spoken[minutes] ?? "")
+        .accessibilityLabel(durationLabels.spoken[minutes] ?? "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

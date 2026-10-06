@@ -56,7 +56,14 @@ enum FanControlResumeContract {
     }
     class Fixture {
         enum AccessState { case notRegistered, requiresApproval, enabled, unavailable }
-        static let shared = Service()
+        /// Counts every reach for the service, which on a real launch
+        /// creates it and asks Service Management for the helper's status.
+        static var sharedReaches = 0
+        private static let instance = Service()
+        static var shared: Service {
+            sharedReaches += 1
+            return instance
+        }
         static var helperVersion = "bundled"
         var accessState = AccessState.enabled
         var snapshot = FanControlSnapshot.empty
@@ -140,6 +147,11 @@ enum FanControlResumeContract {
         }
         var storedResume: String? { defaults.string(forKey: DefaultsKey.fanControlResumeConfiguration) }
 
+        reset(resume: false, stored: nil)
+        Service.sharedReaches = 0
+        Service.recoverIfNeeded()
+        suite.expect(Service.sharedReaches == 0,
+                     "a launch with no kept control, stored end or recovery never loads the fan control service")
         reset(resume: false, recovery: true)
         Service.recoverIfNeeded()
         suite.expect(service.applied.isEmpty && service.requests == ["restore"],
@@ -529,6 +541,14 @@ enum FanControlResumeContract {
         suite.expect(FanControlConfiguration.decodeResume(storedResume ?? "") == .manual(level: 60)
                 && service.timedManual == replacement && storedMinutes == 10,
                "a replacement confirmed after resume was turned on is kept with its own end")
+
+        reset(resume: false, timed: remaining)
+        defaults.values[DefaultsKey.fanControlResumeConfiguration] = nil
+        Environment.available = false
+        Service.sharedReaches = 0
+        Service.recoverIfNeeded()
+        suite.expect(Service.sharedReaches == 0,
+                     "with fan control off in the hub, a stored end does not load the service at launch")
 
         reset(timed: remaining)
         Environment.available = false
